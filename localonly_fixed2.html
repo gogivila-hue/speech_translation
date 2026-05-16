@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://cdn.jsdelivr.net;
+      worker-src 'self' blob:;
+      connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co https://*.hf.co;
+      style-src 'self' 'unsafe-inline';
+      media-src 'self' blob:;
+      img-src 'self' data:;
+    "
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Browser Local AI Speech Translator</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --line: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --danger: #dc2626;
+      --danger-hover: #b91c1c;
+      --success: #16a34a;
+      --warning: #d97706;
+      --shadow: 0 16px 48px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topArea {
+      height: 24vh;
+      min-height: 170px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      padding: 16px 22px;
+      align-items: stretch;
+      box-shadow: 0 8px 28px rgba(15, 23, 42, 0.04);
+      z-index: 2;
+    }
+
+    .interimPanel {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .labelRow {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    .dot.on {
+      background: var(--success);
+      animation: pulse 1.2s infinite;
+    }
+
+    .dot.warn { background: var(--warning); }
+    .dot.err { background: var(--danger); }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.34); }
+      70% { box-shadow: 0 0 0 8px rgba(22, 163, 74, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+    }
+
+    .interimText {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface-soft);
+      padding: 12px 14px;
+      color: #1d4ed8;
+      font-size: clamp(14px, 1.25vw, 18px);
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      scroll-behavior: smooth;
+    }
+
+    .buttonPanel {
+      width: 144px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      justify-content: center;
+    }
+
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #ffffff;
+      background: var(--accent);
+      transition: transform 0.12s ease, opacity 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      background: var(--accent-hover);
+    }
+
+    button:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    button.stop {
+      background: var(--danger);
+      box-shadow: 0 8px 18px rgba(220, 38, 38, 0.16);
+    }
+
+    button.stop:hover { background: var(--danger-hover); }
+
+    button.secondary {
+      background: #475569;
+      box-shadow: none;
+    }
+
+    .bottomArea {
+      height: 76vh;
+      background: var(--bg);
+      padding: 14px 22px 22px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .privacyNote {
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .privacyNote strong { color: #334155; }
+
+    .tableShell {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .tableHeader, .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .tableHeader {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 12px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+
+    .tableHeader div {
+      padding: 11px 15px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+    }
+
+    .tableHeader div + div { border-left: 1px solid var(--line); }
+
+    .tableBody {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      background: var(--surface);
+      scroll-behavior: smooth;
+    }
+
+    .empty {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 15px;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .row {
+      border-bottom: 1px solid var(--line);
+      min-height: 64px;
+    }
+
+    .row:nth-child(even) { background: #fbfdff; }
+
+    .cell {
+      padding: 13px 15px 15px;
+      line-height: 1.65;
+      font-size: clamp(13px, 1vw, 16px);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .cell.jp {
+      border-left: 1px solid var(--line);
+      color: #334155;
+    }
+
+    .processing { color: var(--warning); }
+    .error { color: #b91c1c; }
+
+    .progressWrap {
+      height: 8px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progressBar {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.2s ease;
+    }
+
+    @media (max-width: 760px) {
+      .topArea {
+        grid-template-columns: 1fr;
+        height: 34vh;
+        min-height: 250px;
+        padding: 12px;
+        gap: 10px;
+      }
+
+      .buttonPanel {
+        width: 100%;
+        flex-direction: row;
+      }
+
+      .bottomArea {
+        height: 66vh;
+        padding: 12px;
+      }
+
+      .tableHeader, .row {
+        grid-template-columns: 1fr;
+      }
+
+      .tableHeader div + div, .cell.jp {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="topArea">
+    <div class="interimPanel">
+      <div class="labelRow">
+        <span>BROWSER LOCAL AI STATUS</span>
+        <span class="status">
+          <span id="dot" class="dot"></span>
+          <span id="statusText">待機中</span>
+        </span>
+      </div>
+      <div id="interimText" class="interimText" aria-live="polite">
+開始ボタンを押すと、初回はAIモデルをブラウザにダウンロードします。
+音声・文字起こし・翻訳内容はサーバーへ送信せず、ブラウザ内で処理します。
+      </div>
+      <div class="progressWrap" aria-hidden="true">
+        <div id="progressBar" class="progressBar"></div>
+      </div>
+    </div>
+
+    <div class="buttonPanel">
+      <button id="startBtn">開始</button>
+      <button id="stopBtn" class="stop" disabled>停止</button>
+      <button id="clearBtn" class="secondary">クリア</button>
+    </div>
+  </section>
+
+  <section class="bottomArea">
+    <div class="privacyNote">
+      <strong>ローカル処理:</strong> Web Speech API・Google翻訳・外部音声認識APIは使いません。
+      初回のみライブラリとAIモデルを取得しますが、録音音声・英語テキスト・日本語訳は外部送信しません。
+    </div>
+
+    <div class="tableShell">
+      <div class="tableHeader">
+        <div>ENGLISH</div>
+        <div>日本語</div>
+      </div>
+      <div id="tableBody" class="tableBody" aria-live="polite">
+        <div id="emptyMessage" class="empty">開始ボタンを押して、英語で話してください。</div>
+      </div>
+    </div>
+  </section>
+
+  <script type="module">
+    import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2";
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const interimText = document.getElementById("interimText");
+    const statusText = document.getElementById("statusText");
+    const dot = document.getElementById("dot");
+    const tableBody = document.getElementById("tableBody");
+    const progressBar = document.getElementById("progressBar");
+    let emptyMessage = document.getElementById("emptyMessage");
+
+    const ASR_MODEL = "Xenova/whisper-tiny.en";
+    const TRANSLATION_MODEL = "Xenova/opus-mt-en-jap";
+    const CHUNK_MS = 8000;
+    const TARGET_SAMPLE_RATE = 16000;
+
+    let transcriber = null;
+    let translator = null;
+    let mediaStream = null;
+    let recorder = null;
+    let isRunning = false;
+    let isLoading = false;
+    let chunkIndex = 0;
+    let pendingCount = 0;
+
+    env.allowLocalModels = false;
+    env.allowRemoteModels = true;
+    env.useBrowserCache = true;
+
+    try {
+      env.backends.onnx.wasm.numThreads = Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2));
+    } catch (_) {}
+
+    function setStatus(message, mode = "idle") {
+      statusText.textContent = message;
+      dot.classList.remove("on", "warn", "err");
+      if (mode === "on") dot.classList.add("on");
+      if (mode === "warn") dot.classList.add("warn");
+      if (mode === "err") dot.classList.add("err");
+    }
+
+    function setProgress(value) {
+      const clamped = Math.max(0, Math.min(100, value));
+      progressBar.style.width = `${clamped}%`;
+    }
+
+    function setInterim(message) {
+      interimText.textContent = message;
+      requestAnimationFrame(() => {
+        interimText.scrollTop = interimText.scrollHeight;
+      });
+    }
+
+    function appendInterim(message) {
+      interimText.textContent += `\n${message}`;
+      requestAnimationFrame(() => {
+        interimText.scrollTop = interimText.scrollHeight;
+      });
+    }
+
+    function scrollToBottom() {
+      requestAnimationFrame(() => {
+        tableBody.scrollTop = tableBody.scrollHeight;
+      });
+    }
+
+    function addProcessingRow(label) {
+      if (emptyMessage) {
+        emptyMessage.remove();
+        emptyMessage = null;
+      }
+
+      const row = document.createElement("div");
+      row.className = "row";
+
+      const en = document.createElement("div");
+      en.className = "cell processing";
+      en.textContent = label;
+
+      const jp = document.createElement("div");
+      jp.className = "cell jp processing";
+      jp.textContent = "処理中...";
+
+      row.appendChild(en);
+      row.appendChild(jp);
+      tableBody.appendChild(row);
+      scrollToBottom();
+
+      return { row, en, jp };
+    }
+
+    function updateRow(cells, english, japanese) {
+      cells.en.className = "cell en";
+      cells.jp.className = "cell jp";
+      cells.en.textContent = english;
+      cells.jp.textContent = japanese;
+      scrollToBottom();
+    }
+
+    function updateRowError(cells, message) {
+      cells.en.className = "cell error";
+      cells.jp.className = "cell jp error";
+      cells.en.textContent = "処理エラー";
+      cells.jp.textContent = message;
+      scrollToBottom();
+    }
+
+    async function ensureModels() {
+      if (transcriber && translator) return;
+      if (isLoading) return;
+
+      isLoading = true;
+      startBtn.disabled = true;
+      setStatus("モデル読込中", "warn");
+      setProgress(3);
+      setInterim(
+        "AIモデルを読み込んでいます。初回は数十MB〜数百MBのダウンロードが発生します。\n" +
+        "この通信では音声や会話内容は送信されません。"
+      );
+
+      const progressMap = new Map();
+
+      function modelProgress(label) {
+        return (progress) => {
+          if (progress.status === "progress") {
+            const key = `${label}:${progress.file || ""}`;
+            progressMap.set(key, progress.progress || 0);
+            const values = [...progressMap.values()];
+            const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+            const base = label === "ASR" ? 5 : 52;
+            const span = label === "ASR" ? 42 : 42;
+            setProgress(base + (avg / 100) * span);
+            setStatus(`${label}モデル取得中 ${Math.round(avg)}%`, "warn");
+          } else if (progress.status === "ready") {
+            appendInterim(`${label}モデル準備完了`);
+          } else if (progress.status === "initiate") {
+            appendInterim(`${label}: ${progress.file || "モデルファイル"} を取得中...`);
+          }
+        };
+      }
+
+      try {
+        transcriber = await pipeline(
+          "automatic-speech-recognition",
+          ASR_MODEL,
+          {
+            progress_callback: modelProgress("ASR"),
+            dtype: "q8",
+          }
+        );
+
+        setProgress(52);
+        translator = await pipeline(
+          "translation",
+          TRANSLATION_MODEL,
+          {
+            progress_callback: modelProgress("翻訳"),
+            dtype: "q8",
+          }
+        );
+
+        setProgress(100);
+        setStatus("準備完了", "idle");
+        setInterim("準備完了です。開始ボタンを押して英語で話してください。");
+      } catch (error) {
+        setStatus("読込失敗", "err");
+        setInterim(
+          "モデルの読み込みに失敗しました。\n" +
+          "ネットワーク接続、ブラウザのWebAssembly対応、ストレージ容量を確認してください。\n\n" +
+          String(error?.message || error)
+        );
+        throw error;
+      } finally {
+        isLoading = false;
+        startBtn.disabled = false;
+      }
+    }
+
+    async function blobToFloat32Audio(blob) {
+      const arrayBuffer = await blob.arrayBuffer();
+      const audioContext = new AudioContext();
+      let decoded;
+      try {
+        decoded = await audioContext.decodeAudioData(arrayBuffer);
+      } catch (error) {
+        await audioContext.close();
+        throw new Error("音声データをデコードできませんでした。ブラウザをChromeまたはEdge最新版に更新してください。");
+      }
+
+      const channelData = decoded.getChannelData(0);
+      const sourceSampleRate = decoded.sampleRate;
+
+      if (sourceSampleRate === TARGET_SAMPLE_RATE) {
+        await audioContext.close();
+        return channelData;
+      }
+
+      const ratio = sourceSampleRate / TARGET_SAMPLE_RATE;
+      const newLength = Math.round(channelData.length / ratio);
+      const resampled = new Float32Array(newLength);
+
+      for (let i = 0; i < newLength; i++) {
+        const sourceIndex = i * ratio;
+        const index0 = Math.floor(sourceIndex);
+        const index1 = Math.min(index0 + 1, channelData.length - 1);
+        const weight = sourceIndex - index0;
+        resampled[i] = channelData[index0] * (1 - weight) + channelData[index1] * weight;
+      }
+
+      await audioContext.close();
+      return resampled;
+    }
+
+    async function processChunk(blob, index) {
+      pendingCount += 1;
+      setStatus(`処理中 ${pendingCount}件`, "warn");
+      const cells = addProcessingRow(`音声チャンク ${index} をブラウザ内で文字起こし中...`);
+
+      try {
+        const audio = await blobToFloat32Audio(blob);
+
+        if (audio.length < TARGET_SAMPLE_RATE * 1.0) {
+          cells.row.remove();
+          return;
+        }
+
+        const asrResult = await transcriber(audio);
+
+        const english = String(asrResult?.text || "").trim();
+
+        if (!english) {
+          cells.row.remove();
+          return;
+        }
+
+        cells.en.textContent = english;
+        cells.jp.textContent = "ブラウザ内で翻訳中...";
+
+        const translationResult = await translator(english);
+        const japanese = Array.isArray(translationResult)
+          ? String(translationResult[0]?.translation_text || "")
+          : String(translationResult?.translation_text || "");
+
+        updateRow(cells, english, japanese || "翻訳結果を取得できませんでした。");
+      } catch (error) {
+        updateRowError(cells, String(error?.message || error));
+      } finally {
+        pendingCount -= 1;
+        if (isRunning) {
+          setStatus(pendingCount > 0 ? `録音中 / 処理中 ${pendingCount}件` : "録音中", "on");
+        } else {
+          setStatus(pendingCount > 0 ? `停止中 / 処理中 ${pendingCount}件` : "停止中", "idle");
+        }
+      }
+    }
+
+    function getSupportedMimeType() {
+      const mimeCandidates = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/ogg"
+      ];
+
+      for (const candidate of mimeCandidates) {
+        if (MediaRecorder.isTypeSupported(candidate)) {
+          return candidate;
+        }
+      }
+      return "";
+    }
+
+    function startOneChunk() {
+      if (!isRunning || !mediaStream) return;
+
+      const mimeType = getSupportedMimeType();
+      const chunks = [];
+
+      try {
+        recorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : undefined);
+      } catch (error) {
+        setInterim("MediaRecorderの開始に失敗しました。ブラウザを変更してください。");
+        setStatus("録音エラー", "err");
+        stopRecording();
+        return;
+      }
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        setInterim("録音エラーが発生しました。");
+        setStatus("録音エラー", "err");
+      };
+
+      recorder.onstop = () => {
+        if (!chunks.length) {
+          if (isRunning) startOneChunk();
+          return;
+        }
+
+        const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
+        if (blob.size > 1024) {
+          chunkIndex += 1;
+          setInterim(`録音中... ${CHUNK_MS / 1000}秒ごとにブラウザ内で文字起こししています。`);
+          processChunk(blob, chunkIndex);
+        }
+
+        if (isRunning) {
+          startOneChunk();
+        }
+      };
+
+      recorder.start();
+
+      chunkTimer = setTimeout(() => {
+        try {
+          if (recorder && recorder.state === "recording") {
+            recorder.stop();
+          }
+        } catch (_) {}
+      }, CHUNK_MS);
+    }
+
+    async function startRecording() {
+      if (isRunning) return;
+
+      try {
+        await ensureModels();
+      } catch (_) {
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setInterim("このブラウザではマイク取得に対応していません。Chrome / Edge を使ってください。");
+        setStatus("非対応", "err");
+        return;
+      }
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
+      } catch (error) {
+        setInterim("マイクの使用が許可されませんでした。ブラウザのマイク権限を確認してください。");
+        setStatus("マイク未許可", "err");
+        return;
+      }
+
+      isRunning = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      setStatus("録音中", "on");
+      setInterim("録音を開始しました。英語で話してください。");
+
+      startOneChunk();
+    }
+
+    function stopRecording() {
+      if (!isRunning) return;
+
+      isRunning = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      setInterim("停止しました。未処理の音声があれば処理完了まで待ってください。");
+      setStatus(pendingCount > 0 ? `停止中 / 処理中 ${pendingCount}件` : "停止中", "idle");
+
+      if (chunkTimer) {
+        clearTimeout(chunkTimer);
+        chunkTimer = null;
+      }
+
+      try {
+        if (recorder && recorder.state !== "inactive") {
+          recorder.stop();
+        }
+      } catch (_) {}
+
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+    }
+
+    function clearRows() {
+      tableBody.innerHTML = '<div id="emptyMessage" class="empty">開始ボタンを押して、英語で話してください。</div>';
+      emptyMessage = document.getElementById("emptyMessage");
+    }
+
+    startBtn.addEventListener("click", startRecording);
+    stopBtn.addEventListener("click", stopRecording);
+    clearBtn.addEventListener("click", clearRows);
+  </script>
+</body>
+</html>
